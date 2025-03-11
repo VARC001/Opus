@@ -7,9 +7,6 @@ import aiohttp
 import traceback
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from youtubesearchpython.__future__ import VideosSearch
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
-from matplotlib.colors import LinearSegmentedColormap
 
 logging.basicConfig(level=logging.INFO)
 
@@ -125,8 +122,6 @@ async def get_thumb(videoid: str):
         draw_text_with_shadow(background, draw, (565, 320), f"{channel}  |  {views[:23]}", arial, (255, 255, 255))
 
         line_length, line_color = 580, (255, 255, 255)
-        #line_length = 580 
-        #line_color = LinearSegmentedColormap.from_list("blue_to_white", [(0, 0, 1), (1, 1, 1)])
 
         if duration != "Live":
             color_line_percentage = random.uniform(0.15, 0.85)
@@ -142,7 +137,7 @@ async def get_thumb(videoid: str):
         draw_text_with_shadow(background, draw, (565, 400), "00:00", arial, (255, 255, 255))
         draw_text_with_shadow(background, draw, (1080, 400), duration, arial, (255, 255, 255))
 
-        play_icons = Image.open("Opus/resources/new.png").resize((560, 62))
+        play_icons = Image.open("Opus/resources/new.png").resize((580, 62))
         background.paste(play_icons, (565, 450), play_icons)
 
         os.remove(temp_thumb_path)
@@ -151,6 +146,6 @@ async def get_thumb(videoid: str):
         return thumb_path
 
     except Exception as e:
-        logging.error(f"ᴇʀʀᴏʀ ɢᴇɴᴇʀᴀᴛɪɴɢ ᴛʜᴜᴍʙɴᴀɪʟ ꜰᴏʀ ᴠɪᴅᴇᴏ {videoid}: {e}")
+        logging.error(f"Error generating thumbnail for video {videoid}: {e}")
         traceback.print_exc()
         return None
