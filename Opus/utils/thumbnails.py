@@ -124,9 +124,9 @@ async def get_thumb(videoid: str):
         draw_text_with_shadow(background, draw, (565, 230), title1[1], title_font, (255, 255, 255))
         draw_text_with_shadow(background, draw, (565, 320), f"{channel}  |  {views[:23]}", arial, (255, 255, 255))
 
-        #line_length, line_color = 580, (255, 255, 255)
-        line_length = 580 
-        line_color = LinearSegmentedColormap.from_list("blue_to_white", [(0, 0, 1), (1, 1, 1)])
+        line_length, line_color = 580, (255, 255, 255)
+        #line_length = 580 
+        #line_color = LinearSegmentedColormap.from_list("blue_to_white", [(0, 0, 1), (1, 1, 1)])
 
         if duration != "Live":
             color_line_percentage = random.uniform(0.15, 0.85)
