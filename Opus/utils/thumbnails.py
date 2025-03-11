@@ -2,161 +2,150 @@ import random
 import logging
 import os
 import re
-import traceback
 import aiofiles
 import aiohttp
+import traceback
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 from youtubesearchpython.__future__ import VideosSearch
 
 logging.basicConfig(level=logging.INFO)
 
-
 def changeImageSize(maxWidth, maxHeight, image):
-    """Resize image while maintaining aspect ratio."""
-    try:
-        widthRatio = maxWidth / image.size[0]
-        heightRatio = maxHeight / image.size[1]
-        newWidth = int(widthRatio * image.size[0])
-        newHeight = int(heightRatio * image.size[1])
-        return image.resize((newWidth, newHeight))
-    except Exception as e:
-        logging.error(f"Error resizing image: {e}")
-        return image
-
+    return image.resize((maxWidth, maxHeight), Image.LANCZOS)
 
 def truncate(text):
-    """Truncate text to fit within defined space."""
-    list_words = text.split(" ")
+    words = text.split(" ")
     text1, text2 = "", ""
-
-    for word in list_words:
+    for word in words:
         if len(text1) + len(word) < 30:
             text1 += " " + word
         elif len(text2) + len(word) < 30:
             text2 += " " + word
-
     return [text1.strip(), text2.strip()]
 
-
 def random_color():
-    """Generate a random RGB color."""
-    return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-
+    return (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200))
 
 def generate_gradient(width, height, colors):
-    """Generate a smooth multi-color gradient background."""
-    try:
-        base = Image.new('RGBA', (width, height), colors[0])
-        for i in range(1, len(colors)):
-            overlay = Image.new('RGBA', (width, height), colors[i])
-            mask = Image.new('L', (width, height))
-            mask_data = [int(255 * (y / height)) for y in range(height) for _ in range(width)]
-            mask.putdata(mask_data)
-            base.paste(overlay, (0, 0), mask)
-
-        return base.resize((width, height))  # Ensure gradient matches required size
-    except Exception as e:
-        logging.error(f"Error generating gradient: {e}")
-        return Image.new("RGBA", (width, height), (0, 0, 0, 255))
-
+    base = Image.new('RGBA', (width, height), colors[0])
+    for i in range(1, len(colors)):
+        overlay = Image.new('RGBA', (width, height), colors[i])
+        mask = Image.new('L', (width, height))
+        mask_data = [int(255 * (y / height)) for y in range(height) for _ in range(width)]
+        mask.putdata(mask_data)
+        base.paste(overlay, (0, 0), mask)
+    return base.resize((width, height), Image.LANCZOS)  # Ensure correct size
 
 def add_border(image, border_width, border_color):
-    """Add a border around the image."""
-    try:
-        new_size = (image.size[0] + 2 * border_width, image.size[1] + 2 * border_width)
-        new_image = Image.new("RGBA", new_size, border_color)
-        new_image.paste(image, (border_width, border_width))
-        return new_image
-    except Exception as e:
-        logging.error(f"Error adding border: {e}")
-        return image
+    width, height = image.size
+    new_width = width + 2 * border_width
+    new_height = height + 2 * border_width
+    new_image = Image.new("RGBA", (new_width, new_height), border_color)
+    new_image.paste(image, (border_width, border_width))
+    return new_image
 
+def crop_center_square(img, output_size, corner_radius=40, crop_scale=1.5):
+    half_width, half_height = img.size[0] / 2, img.size[1] / 2
+    larger_size = int(output_size * crop_scale)
+    img = img.crop((half_width - larger_size / 2, half_height - larger_size / 2, 
+                    half_width + larger_size / 2, half_height + larger_size / 2))
+    img = img.resize((output_size, output_size))
+
+    mask = Image.new('L', (output_size, output_size), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle((0, 0, output_size, output_size), corner_radius, fill=255)
+
+    result = Image.new('RGBA', (output_size, output_size))
+    result.paste(img, (0, 0), mask)
+    return result
+
+def draw_text_with_shadow(background, draw, position, text, font, fill, shadow_offset=(3, 3), shadow_blur=5):
+    shadow = Image.new('RGBA', background.size, (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.text(position, text, font=font, fill="black")
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=shadow_blur))
+    background.paste(shadow, shadow_offset, shadow)
+    draw.text(position, text, font=font, fill=fill)
 
 async def get_thumb(videoid: str):
-    """Fetch YouTube video thumbnail and generate an enhanced image."""
     try:
-        if os.path.isfile(f"cache/{videoid}_v4.png"):
-            return f"cache/{videoid}_v4.png"
+        thumb_path = f"cache/{videoid}_v4.png"
+        if os.path.isfile(thumb_path):
+            return thumb_path
 
         url = f"https://www.youtube.com/watch?v={videoid}"
         results = VideosSearch(url, limit=1)
+        video_data = (await results.next())["result"][0]
 
-        # Fetch video metadata
-        for result in (await results.next())["result"]:
-            title = result.get("title", "Unknown Title")
-            title = re.sub(r"\W+", " ", title).title()
-            duration = result.get("duration", "Live")
-            thumbnail = result.get("thumbnails", [{}])[0].get("url", "").split("?")[0]
-            views = result.get("viewCount", {}).get("short", "Unknown Views")
-            channel = result.get("channel", {}).get("name", "Unknown Channel")
+        title = re.sub("\W+", " ", video_data.get("title", "Unsupported Title")).title()
+        duration = video_data.get("duration", "Live")
+        thumbnail_url = video_data["thumbnails"][0]["url"].split("?")[0] if video_data.get("thumbnails") else None
+        views = video_data.get("viewCount", {}).get("short", "Unknown Views")
+        channel = video_data.get("channel", {}).get("name", "Unknown Channel")
 
-        # Download thumbnail
+        if not thumbnail_url:
+            logging.error("No thumbnail found for the video.")
+            return None
+
         async with aiohttp.ClientSession() as session:
-            async with session.get(thumbnail) as resp:
-                if resp.status == 200:
-                    filepath = f"cache/thumb{videoid}.png"
-                    async with aiofiles.open(filepath, mode="wb") as f:
-                        await f.write(await resp.read())
-                else:
-                    logging.error(f"Failed to fetch thumbnail for {videoid}, HTTP {resp.status}")
+            async with session.get(thumbnail_url) as resp:
+                if resp.status != 200:
+                    logging.error(f"Failed to fetch thumbnail: {resp.status}")
                     return None
+                content_type = resp.headers.get('Content-Type', '')
+                extension = 'jpg' if 'jpeg' in content_type or 'jpg' in content_type else 'png'
+                temp_thumb_path = f"cache/thumb{videoid}.{extension}"
+                async with aiofiles.open(temp_thumb_path, "wb") as f:
+                    await f.write(await resp.read())
 
-        youtube = Image.open(filepath).convert("RGBA")
-        youtube = changeImageSize(400, 225, youtube)
+        youtube = Image.open(temp_thumb_path).convert("RGBA")
+        image1 = changeImageSize(400, 225, youtube)
 
-        # Create blurred background
-        background = youtube.filter(ImageFilter.BoxBlur(50))
-        background = ImageEnhance.Brightness(background).enhance(0.6)
+        background = image1.filter(ImageFilter.BoxBlur(50))
+        enhancer = ImageEnhance.Brightness(background)
+        background = enhancer.enhance(0.6)
 
-        # Generate multi-color gradient
-        gradient_image = generate_gradient(1280, 720, [random_color(), random_color(), random_color()])
-        gradient_image = gradient_image.resize(background.size)  # Ensure correct size
-        background = Image.blend(background, gradient_image, alpha=0.3)
+        gradient_colors = [random_color(), random_color(), random_color()]
+        gradient_image = generate_gradient(1280, 720, gradient_colors)
+        background = Image.blend(background.resize((1280, 720)), gradient_image, alpha=0.3)
 
         draw = ImageDraw.Draw(background)
         title_font = ImageFont.truetype("Opus/assets/font3.ttf", 45)
         arial = ImageFont.truetype("Opus/assets/font2.ttf", 30)
 
-        # Add Thumbnail to the left
-        square_thumbnail = youtube.resize((400, 400))
+        square_thumbnail = crop_center_square(youtube, 400)
         background.paste(square_thumbnail, (120, 160), square_thumbnail)
 
-        # Add Text Information
-        text_x_position = 565
         title1 = truncate(title)
-        draw.text((text_x_position, 180), title1[0], font=title_font, fill=(255, 255, 255))
-        draw.text((text_x_position, 230), title1[1], font=title_font, fill=(255, 255, 255))
-        draw.text((text_x_position, 320), f"{channel}  |  {views[:23]}", font=arial, fill=(255, 255, 255))
+        draw_text_with_shadow(background, draw, (565, 180), title1[0], title_font, (255, 255, 255))
+        draw_text_with_shadow(background, draw, (565, 230), title1[1], title_font, (255, 255, 255))
+        draw_text_with_shadow(background, draw, (565, 320), f"{channel}  |  {views[:23]}", arial, (255, 255, 255))
 
-        # Draw progress bar
-        line_length = 580
+        line_length, line_color = 580, (255, 255, 255)
+
         if duration != "Live":
             color_line_percentage = random.uniform(0.15, 0.85)
             color_line_length = int(line_length * color_line_percentage)
-            white_line_length = line_length - color_line_length
 
-            draw.line([(text_x_position, 380), (text_x_position + color_line_length, 380)], fill=(255, 255, 255), width=9)
-            draw.line([(text_x_position + color_line_length, 380), (text_x_position + line_length, 380)], fill="white", width=8)
-            draw.ellipse([(text_x_position + color_line_length - 10, 370), (text_x_position + color_line_length + 10, 390)], fill=(255, 255, 255))
+            draw.line([(565, 380), (565 + color_line_length, 380)], fill=line_color, width=9)
+            draw.line([(565 + color_line_length, 380), (565 + line_length, 380)], fill="white", width=8)
+            draw.ellipse([(565 + color_line_length - 10, 370), (565 + color_line_length + 10, 390)], fill=line_color)
         else:
-            draw.line([(text_x_position, 380), (text_x_position + line_length, 380)], fill=(255, 255, 255), width=9)
-            draw.ellipse([(text_x_position + line_length - 10, 370), (text_x_position + line_length + 10, 390)], fill=(255, 255, 255))
+            draw.line([(565, 380), (565 + line_length, 380)], fill=line_color, width=9)
+            draw.ellipse([(1145, 370), (1165, 390)], fill=line_color)
 
-        draw.text((text_x_position, 400), "00:00", font=arial, fill=(255, 255, 255))
-        draw.text((1080, 400), duration, font=arial, fill=(255, 255, 255))
+        draw_text_with_shadow(background, draw, (565, 400), "00:00", arial, (255, 255, 255))
+        draw_text_with_shadow(background, draw, (1080, 400), duration, arial, (255, 255, 255))
 
-        # Load Play Button
-        play_icon = Image.open("Opus/resources/new.png").resize((580, 62))
-        background.paste(play_icon, (text_x_position, 450), play_icon)
+        play_icons = Image.open("Opus/resources/new.png").resize((580, 62))
+        background.paste(play_icons, (565, 450), play_icons)
 
-        # Save Final Image
-        os.remove(filepath)
-        final_path = f"cache/{videoid}_v4.png"
-        background.save(final_path)
+        os.remove(temp_thumb_path)
+        background.save(thumb_path)
 
-        return final_path
+        return thumb_path
 
     except Exception as e:
-        logging.error(f"Error generating thumbnail for {videoid}: {e}")
+        logging.error(f"Error generating thumbnail for video {videoid}: {e}")
         traceback.print_exc()
         return None
