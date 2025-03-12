@@ -4,6 +4,7 @@ asyncio==3.4.3
 GitPython
 beautifulsoup4==4.13.3
 dnspython==2.7.0
+Unidecode
 ffmpeg-python==0.2.0
 gpytranslate==1.5.1
 PyYAML
